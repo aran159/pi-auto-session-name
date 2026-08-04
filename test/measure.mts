@@ -5,6 +5,7 @@ import { RequestGate } from "../src/index.ts";
 import { buildConversationExcerpt, excerptFingerprint, type SessionEntryReader } from "../src/title.ts";
 
 const RUNS = 30;
+const MAX_OPTIMIZED_ALLOCATION_GROWTH = 8 * 1024 * 1024;
 
 function assistantMessage(id: string, parentId: string | null, content: string[]): SessionEntry {
   return {
@@ -198,8 +199,14 @@ const memoryRows = [
 
 const longMemory = memoryRows.find(({ scenario }) => scenario === "long")!;
 const compactedMemory = memoryRows.find(({ scenario }) => scenario === "compacted")!;
-assert.ok(longMemory.after.allocationGrowth < longMemory.before.allocationGrowth);
-assert.ok(compactedMemory.after.allocationGrowth < compactedMemory.before.allocationGrowth);
+assert.ok(
+  longMemory.after.allocationGrowth < MAX_OPTIMIZED_ALLOCATION_GROWTH,
+  `long: optimized allocation growth ${longMemory.after.allocationGrowth} exceeded ${MAX_OPTIMIZED_ALLOCATION_GROWTH}`,
+);
+assert.ok(
+  compactedMemory.after.allocationGrowth < MAX_OPTIMIZED_ALLOCATION_GROWTH,
+  `compacted: optimized allocation growth ${compactedMemory.after.allocationGrowth} exceeded ${MAX_OPTIMIZED_ALLOCATION_GROWTH}`,
+);
 const requests = requestCounts();
 for (const row of requests) assert.ok(row.after <= row.before, `${row.scenario}: expected after <= before`);
 
@@ -209,4 +216,15 @@ assert.equal(compactedReader.reads(), 1);
 assert.match(compactedExcerpt.text, /DEMO-42/);
 assert.ok(excerptFingerprint(compactedExcerpt) >= 0);
 
-console.log(JSON.stringify({ runs: RUNS, memoryBytes: memoryRows, providerHttpAttempts: requests }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      runs: RUNS,
+      optimizedAllocationBudgetBytes: MAX_OPTIMIZED_ALLOCATION_GROWTH,
+      memoryBytes: memoryRows,
+      providerHttpAttempts: requests,
+    },
+    null,
+    2,
+  ),
+);
