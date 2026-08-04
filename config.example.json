@@ -1,0 +1,17 @@
+{
+  "provider": "openai-codex",
+  "model": "gpt-5.4-mini",
+  "reasoning": "low",
+  "maxTokens": 96,
+  "timeoutMs": 30000,
+  "maxRetries": 0,
+  "maxRetryDelayMs": 60000,
+  "cacheRetention": "none",
+  "automatic": true,
+  "cooldownMs": 300000,
+  "maxMessages": 6,
+  "maxMessageChars": 3000,
+  "maxConversationChars": 12000,
+  "maxTitleChars": 80,
+  "ticketPrefix": true
+}
