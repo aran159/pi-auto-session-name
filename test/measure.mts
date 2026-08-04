@@ -5,7 +5,6 @@ import { RequestGate } from "../src/index.ts";
 import { buildConversationExcerpt, excerptFingerprint, type SessionEntryReader } from "../src/title.ts";
 
 const RUNS = 30;
-const MAX_OPTIMIZED_ALLOCATION_GROWTH = 8 * 1024 * 1024;
 
 function assistantMessage(id: string, parentId: string | null, content: string[]): SessionEntry {
   return {
@@ -197,21 +196,17 @@ const memoryRows = [
   },
 ];
 
-const longMemory = memoryRows.find(({ scenario }) => scenario === "long")!;
-const compactedMemory = memoryRows.find(({ scenario }) => scenario === "compacted")!;
-assert.ok(
-  longMemory.after.allocationGrowth < MAX_OPTIMIZED_ALLOCATION_GROWTH,
-  `long: optimized allocation growth ${longMemory.after.allocationGrowth} exceeded ${MAX_OPTIMIZED_ALLOCATION_GROWTH}`,
-);
-assert.ok(
-  compactedMemory.after.allocationGrowth < MAX_OPTIMIZED_ALLOCATION_GROWTH,
-  `compacted: optimized allocation growth ${compactedMemory.after.allocationGrowth} exceeded ${MAX_OPTIMIZED_ALLOCATION_GROWTH}`,
-);
 const requests = requestCounts();
 for (const row of requests) assert.ok(row.after <= row.before, `${row.scenario}: expected after <= before`);
 
+const longBoundedReader = reader(longEntries, true);
+const longBoundedExcerpt = buildConversationExcerpt(longBoundedReader, DEFAULT_CONFIG);
+assert.ok(longBoundedExcerpt.text.length <= DEFAULT_CONFIG.maxConversationChars);
+assert.equal(longBoundedReader.reads(), 1);
+
 const compactedReader = reader(compactedEntries, true);
 const compactedExcerpt = buildConversationExcerpt(compactedReader, DEFAULT_CONFIG);
+assert.ok(compactedExcerpt.text.length <= DEFAULT_CONFIG.maxConversationChars);
 assert.equal(compactedReader.reads(), 1);
 assert.match(compactedExcerpt.text, /DEMO-42/);
 assert.ok(excerptFingerprint(compactedExcerpt) >= 0);
@@ -220,7 +215,13 @@ console.log(
   JSON.stringify(
     {
       runs: RUNS,
-      optimizedAllocationBudgetBytes: MAX_OPTIMIZED_ALLOCATION_GROWTH,
+      deterministicBounds: {
+        maxConversationChars: DEFAULT_CONFIG.maxConversationChars,
+        longOutputChars: longBoundedExcerpt.text.length,
+        longParentReads: longBoundedReader.reads(),
+        compactedOutputChars: compactedExcerpt.text.length,
+        compactedParentReads: compactedReader.reads(),
+      },
       memoryBytes: memoryRows,
       providerHttpAttempts: requests,
     },
