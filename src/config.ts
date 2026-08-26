@@ -1,7 +1,21 @@
 import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
+
+const CONFIG_DIR_NAME = ".pi";
+
+function expandTildePath(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+  return path;
+}
+
+function getAgentDir(): string {
+  const envDir = process.env.PI_CODING_AGENT_DIR;
+  if (envDir) return expandTildePath(envDir);
+  return join(homedir(), CONFIG_DIR_NAME, "agent");
+}
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const CACHE_RETENTIONS = ["none", "short", "long"] as const;

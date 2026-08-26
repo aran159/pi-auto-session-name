@@ -1,4 +1,3 @@
-import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig, modelLabel, type AutoSessionNameConfig } from "./config.ts";
 import {
@@ -10,6 +9,9 @@ import {
   prefixTitleWithTicket,
   type ConversationExcerpt,
 } from "./title.ts";
+
+type PiAiCompat = typeof import("@earendil-works/pi-ai/compat");
+let completeSimplePromise: Promise<PiAiCompat> | undefined;
 
 function responseText(content: ReadonlyArray<unknown>): string {
   for (const item of content) {
@@ -66,6 +68,7 @@ async function generateTitle(
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(auth.error);
 
+  const { completeSimple } = await (completeSimplePromise ??= import("@earendil-works/pi-ai/compat"));
   const response = await completeSimple(
     model,
     {
