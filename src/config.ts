@@ -31,6 +31,7 @@ export interface AutoSessionNameConfig {
   maxRetryDelayMs: number;
   cacheRetention: CacheRetention;
   automatic: boolean;
+  activeNamingDelayMs: number;
   cooldownMs: number;
   maxMessages: number;
   maxMessageChars: number;
@@ -50,6 +51,7 @@ export const DEFAULT_CONFIG: Readonly<AutoSessionNameConfig> = {
   maxRetryDelayMs: 60_000,
   cacheRetention: "none",
   automatic: true,
+  activeNamingDelayMs: 60_000,
   cooldownMs: 5 * 60_000,
   maxMessages: 6,
   maxMessageChars: 3_000,
@@ -82,6 +84,7 @@ interface ConfigEnvironment {
   PI_AUTO_SESSION_NAME_MAX_RETRY_DELAY_MS?: string;
   PI_AUTO_SESSION_NAME_CACHE_RETENTION?: string;
   PI_AUTO_SESSION_NAME_AUTOMATIC?: string;
+  PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS?: string;
   PI_AUTO_SESSION_NAME_COOLDOWN_MS?: string;
   PI_AUTO_SESSION_NAME_MAX_MESSAGES?: string;
   PI_AUTO_SESSION_NAME_MAX_MESSAGE_CHARS?: string;
@@ -156,6 +159,7 @@ function assignNumber(
     | "timeoutMs"
     | "maxRetries"
     | "maxRetryDelayMs"
+    | "activeNamingDelayMs"
     | "cooldownMs"
     | "maxMessages"
     | "maxMessageChars"
@@ -201,6 +205,7 @@ function applyValues(
   assignNumber(target, "timeoutMs", values.timeoutMs, source, warnings, 1_000, 600_000, true);
   assignNumber(target, "maxRetries", values.maxRetries, source, warnings, 0, 10, true);
   assignNumber(target, "maxRetryDelayMs", values.maxRetryDelayMs, source, warnings, 0, 600_000, true);
+  assignNumber(target, "activeNamingDelayMs", values.activeNamingDelayMs, source, warnings, 1_000, 86_400_000, true);
   assignNumber(target, "cooldownMs", values.cooldownMs, source, warnings, 0, 86_400_000, true);
   assignNumber(target, "maxMessages", values.maxMessages, source, warnings, 2, 20, true);
   assignNumber(target, "maxMessageChars", values.maxMessageChars, source, warnings, 100, 20_000, true);
@@ -231,6 +236,7 @@ function environmentValues(env: ConfigEnvironment): Record<string, unknown> {
     maxRetryDelayMs: env.PI_AUTO_SESSION_NAME_MAX_RETRY_DELAY_MS,
     cacheRetention: env.PI_AUTO_SESSION_NAME_CACHE_RETENTION,
     automatic: env.PI_AUTO_SESSION_NAME_AUTOMATIC,
+    activeNamingDelayMs: env.PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS,
     cooldownMs: env.PI_AUTO_SESSION_NAME_COOLDOWN_MS,
     maxMessages: env.PI_AUTO_SESSION_NAME_MAX_MESSAGES,
     maxMessageChars: env.PI_AUTO_SESSION_NAME_MAX_MESSAGE_CHARS,

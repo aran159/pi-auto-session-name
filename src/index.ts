@@ -21,6 +21,46 @@ function responseText(content: ReadonlyArray<unknown>): string {
   return "";
 }
 
+export interface ScheduledTask {
+  cancel(): void;
+  unref?(): void;
+}
+
+export type TaskScheduler = (delayMs: number, callback: () => void) => ScheduledTask;
+
+const defaultTaskScheduler: TaskScheduler = (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return {
+    cancel: () => clearTimeout(timer),
+    unref: () => timer.unref?.(),
+  };
+};
+
+export class ActiveNamingTimer {
+  private task: ScheduledTask | undefined;
+
+  constructor(private readonly scheduleTask: TaskScheduler = defaultTaskScheduler) {}
+
+  schedule(delayMs: number, callback: () => void): boolean {
+    if (this.task) return false;
+    this.task = this.scheduleTask(delayMs, () => {
+      this.task = undefined;
+      callback();
+    });
+    this.task.unref?.();
+    return true;
+  }
+
+  cancel(): void {
+    this.task?.cancel();
+    this.task = undefined;
+  }
+
+  get scheduled(): boolean {
+    return this.task !== undefined;
+  }
+}
+
 export class RequestGate {
   private active: AbortController | undefined;
   private lastAutomaticFingerprint: number | undefined;
@@ -110,21 +150,24 @@ export default function autoSessionName(pi: ExtensionAPI) {
   const gate = new RequestGate();
   let config: AutoSessionNameConfig | undefined;
   let warned = false;
+  const activeNamingTimer = new ActiveNamingTimer();
+  let activeRun: Promise<void> | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
     const loaded = await loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
     config = loaded.config;
     warned = false;
+    activeNamingTimer.cancel();
     for (const warning of loaded.warnings) console.warn(`[auto-session-name] ${warning}`);
   });
 
-  const run = async (ctx: ExtensionContext, force: boolean): Promise<void> => {
+  const run = async (ctx: ExtensionContext, force: boolean, requireAssistantMessage: boolean): Promise<void> => {
     const currentConfig = config;
     if (!currentConfig) return;
     if (!force && (!currentConfig.automatic || pi.getSessionName())) return;
 
     const excerpt = buildConversationExcerpt(ctx.sessionManager, currentConfig);
-    if (!excerpt.hasUserMessage || !excerpt.hasAssistantMessage || !excerpt.text) return;
+    if (!excerpt.hasUserMessage || (requireAssistantMessage && !excerpt.hasAssistantMessage) || !excerpt.text) return;
 
     const controller = gate.begin(excerptFingerprint(excerpt), force, Date.now(), currentConfig.cooldownMs);
     if (!controller) return;
@@ -147,15 +190,46 @@ export default function autoSessionName(pi: ExtensionAPI) {
     }
   };
 
+  const startRun = (
+    ctx: ExtensionContext,
+    force: boolean,
+    requireAssistantMessage: boolean,
+  ): Promise<void> => {
+    let tracked: Promise<void>;
+    tracked = run(ctx, force, requireAssistantMessage).finally(() => {
+      if (activeRun === tracked) activeRun = undefined;
+    });
+    activeRun = tracked;
+    return tracked;
+  };
+
+  pi.on("before_agent_start", (_event, ctx) => {
+    const currentConfig = config;
+    if (!currentConfig?.automatic || pi.getSessionName()) return;
+
+    activeNamingTimer.schedule(currentConfig.activeNamingDelayMs, () => {
+      if (ctx.isIdle() || pi.getSessionName()) return;
+      startRun(ctx, false, false).catch((error: unknown) => {
+        console.error("[auto-session-name] Unexpected active naming failure", error);
+      });
+    });
+  });
+
   pi.on("agent_settled", async (_event, ctx) => {
-    await run(ctx, false);
+    activeNamingTimer.cancel();
+    const pending = activeRun;
+    if (pending) await pending;
+    await startRun(ctx, false, true);
   });
 
   pi.on("session_info_changed", (event) => {
-    if (event.name) gate.shutdown();
+    if (!event.name) return;
+    activeNamingTimer.cancel();
+    gate.shutdown();
   });
 
   pi.on("session_shutdown", () => {
+    activeNamingTimer.cancel();
     gate.shutdown();
   });
 
@@ -174,7 +248,10 @@ export default function autoSessionName(pi: ExtensionAPI) {
         );
         if (!confirmed) return;
       }
-      await run(ctx, true);
+      activeNamingTimer.cancel();
+      const pending = activeRun;
+      if (pending) await pending;
+      await startRun(ctx, true, true);
     },
   });
 }

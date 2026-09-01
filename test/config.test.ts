@@ -62,6 +62,7 @@ test("loadConfig merges defaults, global file, trusted project file, and environ
         PI_AUTO_SESSION_NAME_MODEL: "env-model",
         PI_AUTO_SESSION_NAME_REASONING: "high",
         PI_AUTO_SESSION_NAME_TIMEOUT_MS: "45000",
+        PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS: "90000",
       },
     });
 
@@ -70,6 +71,7 @@ test("loadConfig merges defaults, global file, trusted project file, and environ
     assert.equal(loaded.config.reasoning, "high");
     assert.equal(loaded.config.maxTokens, 128);
     assert.equal(loaded.config.timeoutMs, 45_000);
+    assert.equal(loaded.config.activeNamingDelayMs, 90_000);
     assert.equal(loaded.config.ticketPrefix, false);
     assert.equal(loaded.config.maxMessages, 8);
     assert.deepEqual(loaded.warnings, []);
@@ -107,6 +109,7 @@ test("loadConfig keeps safe defaults and reports invalid values", async () => {
       maxTokens: 0,
       timeoutMs: 10,
       maxRetries: -1,
+      activeNamingDelayMs: 999,
       cacheRetention: "forever",
       automatic: "sometimes",
     }),

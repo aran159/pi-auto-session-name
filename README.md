@@ -1,6 +1,6 @@
 # pi-auto-session-name
 
-Global [pi](https://github.com/earendil-works/pi) extension that assigns a concise display name after the first settled agent run.
+Global [pi](https://github.com/earendil-works/pi) extension that assigns concise display names to coding-agent sessions.
 
 ## Install
 
@@ -18,12 +18,13 @@ Restart Pi or run `/reload`. The extension uses the configured naming provider/m
 - `/auto-name` explicitly regenerates a name and asks before replacing an existing one.
 - Ticket IDs found in the conversation are normalized and prefixed to the generated title, for example `DEMO-123: Improve sample workflow`.
 - Naming input is bounded. Tool output, thinking blocks, images, system context, abandoned branches, and pre-compaction history are excluded.
+- Short runs are named after `agent_settled`; runs still active after `activeNamingDelayMs` are named in the background from the conversation available so far.
 - Automatic duplicate requests share a configurable cooldown; changed conversation excerpts and explicit `/auto-name` retries remain eligible immediately.
-- Active requests are aborted on rename or session shutdown.
+- Active timers and requests are cancelled on rename or session shutdown.
 
 ## How the name is generated
 
-Automatic naming runs after an `agent_settled` event, once Pi has finished the initial agent run, including tools, retries, compaction retries, and queued continuations. It runs only while the session has no existing name and `automatic` is enabled. `/auto-name` runs the same process explicitly and can replace an existing name after confirmation.
+Automatic naming uses a hybrid trigger while the session has no existing name and `automatic` is enabled. Short runs are named after `agent_settled`, once Pi has finished tools, retries, compaction retries, and queued continuations. When a run remains active for `activeNamingDelayMs` (60 seconds by default), naming starts in the background from the conversation available at that point, even if no assistant text has been finalized yet. If the run settles before the timer, the timer is cancelled. `/auto-name` runs the same process explicitly and can replace an existing name after confirmation.
 
 A name is generated from a deliberately small conversation excerpt:
 
@@ -32,7 +33,7 @@ A name is generated from a deliberately small conversation excerpt:
 3. Text is whitespace-normalized and bounded by `maxMessageChars` per message.
 4. The earliest `maxMessages` useful user/assistant messages are retained. This favors the original task and initial outcome instead of later incidental details.
 5. Traversal stops at the latest compaction checkpoint. Its bounded summary is included as earlier-session context, while the full pre-compaction history is not read or retained.
-6. The final excerpt is bounded again by `maxConversationChars` and must contain at least one user and one assistant message.
+6. The final excerpt is bounded again by `maxConversationChars`. Settled and manual naming require at least one user and one assistant message; the active-run timeout requires only a user message.
 
 The excerpt is sent as a single user request to the configured Pi provider/model. The naming prompt asks the model to:
 
@@ -106,6 +107,7 @@ An absent file is normal. Invalid JSON or values keep the previous/default value
   "maxRetryDelayMs": 60000,
   "cacheRetention": "none",
   "automatic": true,
+  "activeNamingDelayMs": 60000,
   "cooldownMs": 300000,
   "maxMessages": 6,
   "maxMessageChars": 3000,
@@ -130,7 +132,8 @@ See [`config.example.json`](config.example.json) for the complete default config
 | `maxRetries` | `0` | Provider-level retry attempts |
 | `maxRetryDelayMs` | `60000` | Maximum accepted provider retry delay |
 | `cacheRetention` | `none` | `none`, `short`, or `long` |
-| `automatic` | `true` | Automatically name unnamed sessions after `agent_settled` |
+| `automatic` | `true` | Automatically name unnamed sessions |
+| `activeNamingDelayMs` | `60000` | Name a still-running session after this delay; minimum 1000 ms |
 | `cooldownMs` | `300000` | Cooldown for an identical failed/empty automatic request |
 | `maxMessages` | `6` | Maximum user/assistant excerpts |
 | `maxMessageChars` | `3000` | Maximum normalized characters per excerpt |
@@ -155,6 +158,7 @@ Following the focused override pattern used by `pi-commandcode-provider`, these 
 - `PI_AUTO_SESSION_NAME_MAX_RETRY_DELAY_MS`
 - `PI_AUTO_SESSION_NAME_CACHE_RETENTION`
 - `PI_AUTO_SESSION_NAME_AUTOMATIC`
+- `PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS`
 - `PI_AUTO_SESSION_NAME_COOLDOWN_MS`
 - `PI_AUTO_SESSION_NAME_MAX_MESSAGES`
 - `PI_AUTO_SESSION_NAME_MAX_MESSAGE_CHARS`

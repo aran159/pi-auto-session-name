@@ -8,6 +8,7 @@
   "maxRetryDelayMs": 60000,
   "cacheRetention": "none",
   "automatic": true,
+  "activeNamingDelayMs": 60000,
   "cooldownMs": 300000,
   "maxMessages": 6,
   "maxMessageChars": 3000,
