@@ -208,7 +208,7 @@ const compactedReader = reader(compactedEntries, true);
 const compactedExcerpt = buildConversationExcerpt(compactedReader, DEFAULT_CONFIG);
 assert.ok(compactedExcerpt.text.length <= DEFAULT_CONFIG.maxConversationChars);
 assert.equal(compactedReader.reads(), 1);
-assert.equal(compactedExcerpt.text, "");
+assert.equal(compactedExcerpt.text, "Assistant: Optimization verified");
 assert.ok(excerptFingerprint(compactedExcerpt) >= 0);
 
 console.log(

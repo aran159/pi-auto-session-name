@@ -7,7 +7,7 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG, loadConfig } from "../src/config.ts";
 import { buildConversationExcerpt, normalizeTitle } from "../src/title.ts";
 
-test("only user text blocks cross the naming boundary", () => {
+test("non-conversation context does not cross the naming boundary", () => {
   const entries = [
     { id: "1", parentId: null, type: "message", message: { role: "system", content: "private instructions" } },
     { id: "2", parentId: "1", type: "message", message: { role: "user", content: [
@@ -25,10 +25,10 @@ test("only user text blocks cross the naming boundary", () => {
   assert.equal(excerpt.text, "User: Fix login");
 });
 
-test("defaults limit user excerpts to two messages and 1000 characters", () => {
-  assert.equal(DEFAULT_CONFIG.maxMessages, 2);
-  assert.equal(DEFAULT_CONFIG.maxMessageChars, 500);
-  assert.equal(DEFAULT_CONFIG.maxConversationChars, 1000);
+test("defaults limit conversation excerpts to six messages and 12000 characters", () => {
+  assert.equal(DEFAULT_CONFIG.maxMessages, 6);
+  assert.equal(DEFAULT_CONFIG.maxMessageChars, 3000);
+  assert.equal(DEFAULT_CONFIG.maxConversationChars, 12000);
 });
 
 test("JSON parse warnings do not disclose configuration contents", async () => {

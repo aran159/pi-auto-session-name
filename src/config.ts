@@ -53,9 +53,9 @@ export const DEFAULT_CONFIG: Readonly<AutoSessionNameConfig> = {
   automatic: true,
   activeNamingDelayMs: 60_000,
   cooldownMs: 5 * 60_000,
-  maxMessages: 2,
-  maxMessageChars: 500,
-  maxConversationChars: 1_000,
+  maxMessages: 6,
+  maxMessageChars: 3_000,
+  maxConversationChars: 12_000,
   maxTitleChars: 80,
   ticketPrefix: true,
 };

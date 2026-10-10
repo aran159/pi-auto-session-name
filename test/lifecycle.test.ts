@@ -52,7 +52,7 @@ async function finishResponse() {
   resolveResponse = undefined;
 }
 
-test("automatic and manual naming preserve explicit names and send user text only", async () => {
+test("automatic and manual naming preserve explicit names and send conversation text", async () => {
   const session = harness();
   await session.emit("session_start");
   session.rename("Manual name");
@@ -63,7 +63,8 @@ test("automatic and manual naming preserve explicit names and send user text onl
   await pending;
   assert.equal(session.name(), "Repair login flow");
   assert.match(JSON.stringify(request), /Fix login/);
-  assert.doesNotMatch(JSON.stringify(request), /private file contents|test-key/);
+  assert.match(JSON.stringify(request), /private file contents/);
+  assert.doesNotMatch(JSON.stringify(request), /test-key/);
 });
 
 test("automatic naming names an unnamed settled session", async () => {

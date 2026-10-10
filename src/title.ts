@@ -68,13 +68,11 @@ export function buildConversationExcerpt(
   session: SessionEntryReader,
   limits: Pick<TitleLimits, "maxMessages" | "maxMessageChars" | "maxConversationChars">,
 ): ConversationExcerpt {
-  const selected: Array<{ role: "user"; text: string }> = [];
-  let hasAssistantMessage = false;
+  const selected: Array<{ role: "user" | "assistant"; text: string }> = [];
   let entry = session.getLeafEntry();
 
   while (entry) {
-    if (entry.type === "message" && entry.message.role === "assistant") hasAssistantMessage = true;
-    if (entry.type === "message" && entry.message.role === "user") {
+    if (entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant")) {
       const text = compactStrings(textParts(entry.message.content), limits.maxMessageChars);
       if (text) {
         selected.unshift({ role: entry.message.role, text });
@@ -87,7 +85,8 @@ export function buildConversationExcerpt(
   }
 
   const hasUserMessage = selected.some(({ role }) => role === "user");
-  const lines = selected.map(({ text }) => `User: ${text}`);
+  const hasAssistantMessage = selected.some(({ role }) => role === "assistant");
+  const lines = selected.map(({ role, text }) => `${role === "user" ? "User" : "Assistant"}: ${text}`);
 
   return {
     text: compactStrings(lines, limits.maxConversationChars),
