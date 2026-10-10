@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { DEFAULT_CONFIG, loadConfig, modelLabel } from "../src/config.ts";
+import { DEFAULT_CONFIG, loadConfig } from "../src/config.ts";
 
 interface PackageManifest {
   dependencies?: Record<string, string>;
@@ -46,11 +46,11 @@ test("loadConfig merges defaults, global file, trusted project file, and environ
   const paths = await temporaryProject();
   await writeFile(
     paths.globalPath,
-    JSON.stringify({ provider: "openai", model: "global-model", reasoning: "low", maxTokens: 128 }),
+    JSON.stringify({ timeoutMs: 40_000, maxMessages: 10 }),
   );
   await writeFile(
     paths.projectPath,
-    JSON.stringify({ model: "project-model", reasoning: "medium", ticketPrefix: false, maxMessages: 8 }),
+    JSON.stringify({ timeoutMs: 50_000, ticketPrefix: false, maxMessages: 8 }),
   );
 
   try {
@@ -59,17 +59,11 @@ test("loadConfig merges defaults, global file, trusted project file, and environ
       projectTrusted: true,
       env: {
         PI_AUTO_SESSION_NAME_CONFIG: paths.globalPath,
-        PI_AUTO_SESSION_NAME_MODEL: "env-model",
-        PI_AUTO_SESSION_NAME_REASONING: "high",
         PI_AUTO_SESSION_NAME_TIMEOUT_MS: "45000",
         PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS: "90000",
       },
     });
 
-    assert.equal(loaded.config.provider, "openai");
-    assert.equal(loaded.config.model, "env-model");
-    assert.equal(loaded.config.reasoning, "high");
-    assert.equal(loaded.config.maxTokens, 128);
     assert.equal(loaded.config.timeoutMs, 45_000);
     assert.equal(loaded.config.activeNamingDelayMs, 90_000);
     assert.equal(loaded.config.ticketPrefix, false);
@@ -82,8 +76,8 @@ test("loadConfig merges defaults, global file, trusted project file, and environ
 
 test("loadConfig ignores project configuration when the project is not trusted", async () => {
   const paths = await temporaryProject();
-  await writeFile(paths.globalPath, JSON.stringify({ model: "global-model" }));
-  await writeFile(paths.projectPath, JSON.stringify({ model: "untrusted-project-model" }));
+  await writeFile(paths.globalPath, JSON.stringify({ timeoutMs: 40_000 }));
+  await writeFile(paths.projectPath, JSON.stringify({ timeoutMs: 50_000 }));
 
   try {
     const loaded = await loadConfig({
@@ -91,7 +85,7 @@ test("loadConfig ignores project configuration when the project is not trusted",
       projectTrusted: false,
       env: { PI_AUTO_SESSION_NAME_CONFIG: paths.globalPath },
     });
-    assert.equal(loaded.config.model, "global-model");
+    assert.equal(loaded.config.timeoutMs, 40_000);
     assert.deepEqual(loaded.paths, [paths.globalPath]);
   } finally {
     await rm(paths.directory, { recursive: true, force: true });
@@ -121,9 +115,7 @@ test("loadConfig keeps safe defaults and reports invalid values", async () => {
       projectTrusted: false,
       env: { PI_AUTO_SESSION_NAME_CONFIG: paths.globalPath },
     });
-    assert.equal(loaded.config.provider, DEFAULT_CONFIG.provider);
-    assert.equal(loaded.config.reasoning, DEFAULT_CONFIG.reasoning);
-    assert.equal(loaded.config.maxTokens, DEFAULT_CONFIG.maxTokens);
+    assert.equal(loaded.config.timeoutMs, DEFAULT_CONFIG.timeoutMs);
     assert.equal(loaded.config.automatic, DEFAULT_CONFIG.automatic);
     assert.ok(loaded.warnings.length >= 8);
   } finally {
@@ -149,8 +141,22 @@ test("loadConfig warns about malformed JSON without failing extension startup", 
   }
 });
 
-test("modelLabel combines provider and model", () => {
-  assert.equal(modelLabel({ provider: "commandcode", model: "anthropic/claude-sonnet" }), "commandcode/anthropic/claude-sonnet");
+test("legacy provider settings are ignored with migration warnings", async () => {
+  const paths = await temporaryProject();
+  try {
+    await writeFile(paths.globalPath, JSON.stringify({ provider: "old-provider", model: "old-model", maxTokens: 96 }));
+    const loaded = await loadConfig({
+      cwd: paths.directory,
+      projectTrusted: false,
+      env: { PI_AUTO_SESSION_NAME_CONFIG: paths.globalPath, PI_AUTO_SESSION_NAME_MODEL: "old-env-model" },
+    });
+    assert.deepEqual(loaded.config, DEFAULT_CONFIG);
+    assert.equal(loaded.warnings.length, 4);
+    assert.ok(loaded.warnings.every((warning) => warning.includes("is ignored")));
+    assert.doesNotMatch(JSON.stringify(loaded.config), /old-provider|old-model|old-env-model/);
+  } finally {
+    await rm(paths.directory, { recursive: true, force: true });
+  }
 });
 
 test("package manifest uses host core packages and ships configuration docs", async () => {

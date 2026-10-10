@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig, modelLabel, type AutoSessionNameConfig } from "./config.ts";
+import { loadConfig, type AutoSessionNameConfig } from "./config.ts";
+import { NAMING_AGENT, NamingIntegrationError, SubagentNamer } from "./subagents.ts";
 import {
   buildConversationExcerpt,
   buildTitlePrompt,
@@ -9,17 +10,6 @@ import {
   prefixTitleWithTicket,
   type ConversationExcerpt,
 } from "./title.ts";
-
-type PiAiCompat = typeof import("@earendil-works/pi-ai/compat");
-let completeSimplePromise: Promise<PiAiCompat> | undefined;
-
-function responseText(content: ReadonlyArray<unknown>): string {
-  for (const item of content) {
-    if (typeof item !== "object" || item === null || !("type" in item) || !("text" in item)) continue;
-    if (item.type === "text" && typeof item.text === "string") return item.text;
-  }
-  return "";
-}
 
 export interface ScheduledTask {
   cancel(): void;
@@ -97,50 +87,14 @@ export class RequestGate {
 }
 
 async function generateTitle(
+  namer: SubagentNamer,
   ctx: ExtensionContext,
   config: AutoSessionNameConfig,
   excerpt: ConversationExcerpt,
   signal: AbortSignal,
 ): Promise<string> {
-  const model = ctx.modelRegistry.find(config.provider, config.model);
-  if (!model) throw new Error(`Model ${modelLabel(config)} not found`);
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) throw new Error(auth.error);
-
-  const { completeSimple } = await (completeSimplePromise ??= import("@earendil-works/pi-ai/compat"));
-  const response = await completeSimple(
-    model,
-    {
-      messages: [
-        {
-          role: "user",
-          content: [{ type: "text", text: buildTitlePrompt(excerpt.text) }],
-          timestamp: Date.now(),
-        },
-      ],
-    },
-    {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      env: auth.env,
-      reasoning: config.reasoning,
-      temperature: config.temperature,
-      maxTokens: config.maxTokens,
-      timeoutMs: config.timeoutMs,
-      maxRetries: config.maxRetries,
-      maxRetryDelayMs: config.maxRetryDelayMs,
-      cacheRetention: config.cacheRetention,
-      signal,
-    },
-  );
-
-  if (response.stopReason === "error") {
-    throw new Error(response.errorMessage ?? "Naming model request failed");
-  }
-  if (response.stopReason === "aborted") throw new Error("Naming model request was aborted");
-
-  const title = normalizeTitle(responseText(response.content), config.maxTitleChars);
+  const response = await namer.generate(buildTitlePrompt(excerpt.text), ctx.cwd, config.timeoutMs, signal);
+  const title = normalizeTitle(response, config.maxTitleChars);
   if (!title) throw new Error("Naming model returned no usable title");
   if (!config.ticketPrefix) return title;
   return prefixTitleWithTicket(title, findTicketId(excerpt.text), config.maxTitleChars);
@@ -148,20 +102,33 @@ async function generateTitle(
 
 export default function autoSessionName(pi: ExtensionAPI) {
   const gate = new RequestGate();
+  const namer = new SubagentNamer(pi.events);
   let config: AutoSessionNameConfig | undefined;
   let warned = false;
   const activeNamingTimer = new ActiveNamingTimer();
   let activeRun: Promise<void> | undefined;
+  let sessionGeneration = 0;
 
   pi.on("session_start", async (_event, ctx) => {
+    const generation = ++sessionGeneration;
     activeNamingTimer.cancel();
     gate.shutdown();
     activeRun = undefined;
+    namer.dispose();
     config = undefined;
     const loaded = await loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
+    if (generation !== sessionGeneration) return;
     config = loaded.config;
     warned = false;
     for (const warning of loaded.warnings) console.warn(`[auto-session-name] ${warning}`);
+    try {
+      namer.ensureRegistered();
+    } catch (error: unknown) {
+      if (error instanceof NamingIntegrationError && ctx.hasUI) {
+        ctx.ui.notify(error.message, "warning");
+        warned = true;
+      }
+    }
   });
 
   const run = async (ctx: ExtensionContext, force: boolean, requireAssistantMessage: boolean): Promise<void> => {
@@ -176,15 +143,15 @@ export default function autoSessionName(pi: ExtensionAPI) {
     if (!controller) return;
 
     try {
-      const title = await generateTitle(ctx, currentConfig, excerpt, controller.signal);
+      const title = await generateTitle(namer, ctx, currentConfig, excerpt, controller.signal);
       if (controller.signal.aborted || (!force && pi.getSessionName())) return;
 
       pi.setSessionName(title);
       warned = false;
       if (ctx.hasUI) ctx.ui.notify(`Session named: ${title}`, "info");
-    } catch {
-      if (!controller.signal.aborted && !warned && ctx.hasUI) {
-        ctx.ui.notify(`Session naming failed with ${modelLabel(currentConfig)}; check configuration and authentication`, "warning");
+    } catch (error: unknown) {
+      if (!controller.signal.aborted && (force || !warned) && ctx.hasUI) {
+        ctx.ui.notify(error instanceof NamingIntegrationError ? error.message : "Session naming failed; check pi-subagents settings and authentication", "warning");
         warned = true;
       }
     } finally {
@@ -218,9 +185,11 @@ export default function autoSessionName(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
+    const generation = sessionGeneration;
     activeNamingTimer.cancel();
     const pending = activeRun;
     if (pending) await pending;
+    if (generation !== sessionGeneration) return;
     await startRun(ctx, false, true);
   });
 
@@ -231,13 +200,17 @@ export default function autoSessionName(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
+    sessionGeneration++;
+    config = undefined;
     activeNamingTimer.cancel();
     gate.shutdown();
+    namer.dispose();
   });
 
   pi.registerCommand("auto-name", {
     description: "Generate or replace the session name",
     handler: async (_args, ctx) => {
+      const generation = sessionGeneration;
       const currentConfig = config;
       if (!currentConfig) {
         if (ctx.hasUI) ctx.ui.notify("Automatic session naming is not initialized", "warning");
@@ -246,13 +219,15 @@ export default function autoSessionName(pi: ExtensionAPI) {
       if (pi.getSessionName() && ctx.hasUI) {
         const confirmed = await ctx.ui.confirm(
           "Replace session name?",
-          `Generate a new name with ${modelLabel(currentConfig)}?`,
+          `Generate a new name with the pi-subagents ${NAMING_AGENT} agent?`,
         );
         if (!confirmed) return;
       }
+      if (generation !== sessionGeneration) return;
       activeNamingTimer.cancel();
       const pending = activeRun;
       if (pending) await pending;
+      if (generation !== sessionGeneration) return;
       await startRun(ctx, true, true);
     },
   });

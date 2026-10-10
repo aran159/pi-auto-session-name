@@ -1,4 +1,3 @@
-import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -17,19 +16,10 @@ function getAgentDir(): string {
   return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-const CACHE_RETENTIONS = ["none", "short", "long"] as const;
+const REMOVED_OPTIONS = ["provider", "model", "reasoning", "temperature", "maxTokens", "maxRetries", "maxRetryDelayMs", "cacheRetention"] as const;
 
 export interface AutoSessionNameConfig {
-  provider: string;
-  model: string;
-  reasoning: ThinkingLevel;
-  temperature: number | undefined;
-  maxTokens: number;
   timeoutMs: number;
-  maxRetries: number;
-  maxRetryDelayMs: number;
-  cacheRetention: CacheRetention;
   automatic: boolean;
   activeNamingDelayMs: number;
   cooldownMs: number;
@@ -41,15 +31,7 @@ export interface AutoSessionNameConfig {
 }
 
 export const DEFAULT_CONFIG: Readonly<AutoSessionNameConfig> = {
-  provider: "openai-codex",
-  model: "gpt-5.4-mini",
-  reasoning: "low",
-  temperature: undefined,
-  maxTokens: 96,
   timeoutMs: 30_000,
-  maxRetries: 0,
-  maxRetryDelayMs: 60_000,
-  cacheRetention: "none",
   automatic: true,
   activeNamingDelayMs: 60_000,
   cooldownMs: 5 * 60_000,
@@ -97,14 +79,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === "string" && THINKING_LEVELS.some((level) => level === value);
-}
-
-function isCacheRetention(value: unknown): value is CacheRetention {
-  return typeof value === "string" && CACHE_RETENTIONS.some((retention) => retention === value);
-}
-
 function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return undefined;
@@ -118,21 +92,6 @@ function parseNumber(value: unknown): number | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function assignString(
-  target: AutoSessionNameConfig,
-  key: "provider" | "model",
-  value: unknown,
-  source: string,
-  warnings: string[],
-): void {
-  if (value === undefined) return;
-  if (typeof value === "string" && value.trim()) {
-    target[key] = value.trim();
-    return;
-  }
-  warnings.push(`${source}.${key} must be a non-empty string`);
 }
 
 function assignBoolean(
@@ -154,11 +113,7 @@ function assignBoolean(
 function assignNumber(
   target: AutoSessionNameConfig,
   key:
-    | "temperature"
-    | "maxTokens"
     | "timeoutMs"
-    | "maxRetries"
-    | "maxRetryDelayMs"
     | "activeNamingDelayMs"
     | "cooldownMs"
     | "maxMessages"
@@ -188,23 +143,11 @@ function applyValues(
   source: string,
   warnings: string[],
 ): void {
-  assignString(target, "provider", values.provider, source, warnings);
-  assignString(target, "model", values.model, source, warnings);
-
-  if (values.reasoning !== undefined) {
-    if (isThinkingLevel(values.reasoning)) target.reasoning = values.reasoning;
-    else warnings.push(`${source}.reasoning must be one of: ${THINKING_LEVELS.join(", ")}`);
-  }
-  if (values.cacheRetention !== undefined) {
-    if (isCacheRetention(values.cacheRetention)) target.cacheRetention = values.cacheRetention;
-    else warnings.push(`${source}.cacheRetention must be one of: ${CACHE_RETENTIONS.join(", ")}`);
+  for (const key of REMOVED_OPTIONS) {
+    if (values[key] !== undefined) warnings.push(`${source}.${key} is ignored; configure the session-namer model through pi-subagents settings. Provider request options belong to pi-subagents and Pi.`);
   }
 
-  assignNumber(target, "temperature", values.temperature, source, warnings, 0, 2, false);
-  assignNumber(target, "maxTokens", values.maxTokens, source, warnings, 16, 4_096, true);
   assignNumber(target, "timeoutMs", values.timeoutMs, source, warnings, 1_000, 600_000, true);
-  assignNumber(target, "maxRetries", values.maxRetries, source, warnings, 0, 10, true);
-  assignNumber(target, "maxRetryDelayMs", values.maxRetryDelayMs, source, warnings, 0, 600_000, true);
   assignNumber(target, "activeNamingDelayMs", values.activeNamingDelayMs, source, warnings, 1_000, 86_400_000, true);
   assignNumber(target, "cooldownMs", values.cooldownMs, source, warnings, 0, 86_400_000, true);
   assignNumber(target, "maxMessages", values.maxMessages, source, warnings, 2, 20, true);
@@ -280,8 +223,4 @@ export async function loadConfig(options: LoadConfigOptions): Promise<LoadedConf
   }
 
   return { config, paths, warnings };
-}
-
-export function modelLabel(config: Pick<AutoSessionNameConfig, "provider" | "model">): string {
-  return `${config.provider}/${config.model}`;
 }

@@ -4,13 +4,16 @@ Global [pi](https://github.com/earendil-works/pi) extension that assigns concise
 
 ## Install
 
-Install this reviewed fork through Pi's Git package support:
+Install through Pi's Git package support:
 
 ```sh
 pi install git:github.com/aran159/pi-auto-session-name
 ```
 
-Restart Pi or run `/reload`. The extension uses the configured naming provider/model; authenticate that provider through Pi as usual.
+This extension requires a separately installed, enabled `pi-subagents` extension with runtime agent registration and structured delegation support.
+It does not install or bundle another copy of `pi-subagents`.
+Restart Pi or run `/reload`. The installed `pi-subagents` extension selects the naming model and resolves authentication.
+If the integration is unavailable, automatic naming leaves the session unchanged and `/auto-name` reports the missing requirement.
 
 ## Behavior
 
@@ -35,7 +38,11 @@ A name is generated from a deliberately small conversation excerpt:
 5. Traversal stops at the latest compaction checkpoint. Neither its summary nor earlier history is sent. Naming waits for a new user message if none follows that checkpoint.
 6. The final excerpt is bounded again by `maxConversationChars`. Settled and manual naming require at least one user and one assistant message; the active-run timeout requires only a user message.
 
-The excerpt is sent as a single user request to the configured Pi provider/model. The naming prompt asks the model to:
+The extension registers a dedicated runtime agent named `session-namer` through the installed `pi-subagents` event API.
+It delegates the bounded excerpt with fresh context and no explicit model or thinking override.
+The agent has no tools, inherited instructions, discovered skills, memory, or ambient extensions.
+A zero-tool budget blocks any unexpected tool call. The delegation disables Intercom and optional artifacts.
+The naming prompt asks the model to:
 
 - return only a title, without markdown or explanation;
 - use the conversation's language;
@@ -64,10 +71,43 @@ No second model request is used for ticket handling or normalization. Identical 
 User and assistant text can contain secrets, file contents, or information inserted by another extension.
 The extension does not guarantee secret removal. Never use naming for sessions whose conversation text must stay private.
 Set `automatic` to `false` to disable automatic requests. Do not run `/auto-name` for sensitive sessions.
-Requests use the configured provider, which can differ from the session provider. Its retention policy still applies.
-`cacheRetention: "none"` does not guarantee that the provider retains no data.
+Requests use the provider selected by `pi-subagents`, which can differ from the session provider. Its retention policy still applies.
+`pi-subagents` owns child execution and local run/session retention. `artifacts: false` disables optional artifacts, not every possible local record.
+Host-required child extensions can still apply. Review their behavior before use with sensitive conversations.
 The naming prompt treats excerpts as untrusted data, but prompt instructions are not a security boundary.
 Provider errors are not displayed because their messages can contain sensitive request details.
+
+## Model selection
+
+There is no built-in naming model. `pi-subagents` selects the model through its normal settings:
+
+1. A matching `subagents.agentOverrides.session-namer.model` setting.
+2. `subagents.defaultModel` when no agent override selects a model.
+3. The current parent session model when neither setting selects one.
+
+Provider-scoped model overrides and model scope restrictions also apply.
+The agent omits its thinking setting, so the operator's `pi-subagents` thinking defaults and overrides apply.
+A small, inexpensive model with little or no thinking is sufficient for this task.
+
+Merge a model override into `~/.pi/agent/settings.json`:
+
+```json
+{
+  "subagents": {
+    "agentOverrides": {
+      "session-namer": {
+        "model": "PROVIDER/MODEL_ID",
+        "thinking": "off"
+      }
+    }
+  }
+}
+```
+
+Use a model ID that your Pi registry provides, authenticate its provider, and run `/reload`.
+`/subagents-models session-namer` shows the live mapping after registration.
+Do not define a file-based agent named `session-namer`; it can collide with this runtime agent.
+The runtime agent keeps its tool and context restrictions; settings can change its model, provider preference, fast mode, and thinking.
 
 ## Configuration
 
@@ -92,7 +132,8 @@ A trusted project may override individual global settings in:
 <project>/.pi/auto-session-name.json
 ```
 
-Project configuration is read only when `ctx.isProjectTrusted()` is true. Untrusted projects cannot change the naming provider, model, request behavior, or data limits.
+Project configuration is read only when `ctx.isProjectTrusted()` is true. Untrusted projects cannot change naming behavior or data limits.
+The installed `pi-subagents` extension separately applies its trusted project settings for model selection.
 
 ### Precedence
 
@@ -109,14 +150,7 @@ An absent file is normal. Invalid JSON or values keep the previous/default value
 
 ```json
 {
-  "provider": "openai-codex",
-  "model": "gpt-5.4-mini",
-  "reasoning": "low",
-  "maxTokens": 96,
   "timeoutMs": 30000,
-  "maxRetries": 0,
-  "maxRetryDelayMs": 60000,
-  "cacheRetention": "none",
   "automatic": true,
   "activeNamingDelayMs": 60000,
   "cooldownMs": 300000,
@@ -134,15 +168,7 @@ See [`config.example.json`](config.example.json) for the complete default config
 
 | Option | Default | Purpose |
 |---|---:|---|
-| `provider` | `openai-codex` | Pi provider ID used for naming |
-| `model` | `gpt-5.4-mini` | Model ID within the provider |
-| `reasoning` | `low` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; Pi clamps unsupported levels |
-| `temperature` | unset | Optional provider temperature from `0` to `2` |
-| `maxTokens` | `96` | Maximum naming response tokens |
-| `timeoutMs` | `30000` | Provider request timeout |
-| `maxRetries` | `0` | Provider-level retry attempts |
-| `maxRetryDelayMs` | `60000` | Maximum accepted provider retry delay |
-| `cacheRetention` | `none` | `none`, `short`, or `long` |
+| `timeoutMs` | `30000` | Naming delegation deadline; cancellation also occurs locally |
 | `automatic` | `true` | Automatically name unnamed sessions |
 | `activeNamingDelayMs` | `60000` | Name a still-running session after this delay; minimum 1000 ms |
 | `cooldownMs` | `300000` | Cooldown for an identical failed/empty automatic request |
@@ -152,22 +178,23 @@ See [`config.example.json`](config.example.json) for the complete default config
 | `maxTitleChars` | `80` | Maximum resulting title length |
 | `ticketPrefix` | `true` | Detect and normalize ticket IDs locally |
 
-Provider/model authentication remains Pi's responsibility. Configure or log in to the selected provider normally; the extension resolves credentials, headers, and provider-scoped environment through Pi's model registry.
+Provider/model authentication remains the installed `pi-subagents` extension's and Pi's responsibility.
+This extension does not read credentials or call a model provider directly.
+
+### Migration from direct model requests
+
+These old settings and their corresponding environment overrides are ignored with a startup warning:
+`provider`, `model`, `reasoning`, `temperature`, `maxTokens`, `maxRetries`, `maxRetryDelayMs`, and `cacheRetention`.
+Move model and thinking choices to `subagents.agentOverrides.session-namer` in Pi settings.
+Provider request options now follow `pi-subagents` and Pi behavior; the delegation API does not expose the old per-request controls.
+`maxTitleChars` still bounds the final title, but this extension no longer sets a 96-token response limit.
 
 ### Environment overrides
 
 Following the focused override pattern used by `pi-commandcode-provider`, these variables support tests, local experiments, and declarative launch environments:
 
 - `PI_AUTO_SESSION_NAME_CONFIG` — replace the global config path
-- `PI_AUTO_SESSION_NAME_PROVIDER`
-- `PI_AUTO_SESSION_NAME_MODEL`
-- `PI_AUTO_SESSION_NAME_REASONING`
-- `PI_AUTO_SESSION_NAME_TEMPERATURE`
-- `PI_AUTO_SESSION_NAME_MAX_TOKENS`
 - `PI_AUTO_SESSION_NAME_TIMEOUT_MS`
-- `PI_AUTO_SESSION_NAME_MAX_RETRIES`
-- `PI_AUTO_SESSION_NAME_MAX_RETRY_DELAY_MS`
-- `PI_AUTO_SESSION_NAME_CACHE_RETENTION`
 - `PI_AUTO_SESSION_NAME_AUTOMATIC`
 - `PI_AUTO_SESSION_NAME_ACTIVE_NAMING_DELAY_MS`
 - `PI_AUTO_SESSION_NAME_COOLDOWN_MS`
@@ -216,4 +243,13 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-This runs type checking, focused behavior/configuration tests, and reproducible `--expose-gc` before/after retained-heap plus provider-attempt measurements.
+This runs type checking, focused behavior/configuration/delegation tests, and reproducible `--expose-gc` retained-heap and request-gate measurements.
+Tests do not call a live model.
+
+To also validate against an installed compiled `pi-subagents` package:
+
+```sh
+PI_SUBAGENTS_TEST_PACKAGE_DIR="$HOME/.pi/agent/npm/node_modules/pi-subagents" npm run check
+```
+
+This checks real runtime registration and request validation without credentials or model requests.
