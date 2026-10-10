@@ -4,10 +4,10 @@ Global [pi](https://github.com/earendil-works/pi) extension that assigns concise
 
 ## Install
 
-Install the published npm package through Pi's package manager:
+Install this reviewed fork through Pi's Git package support:
 
 ```sh
-pi install npm:pi-auto-session-name
+pi install git:github.com/aran159/pi-auto-session-name
 ```
 
 Restart Pi or run `/reload`. The extension uses the configured naming provider/model; authenticate that provider through Pi as usual.
@@ -29,10 +29,10 @@ Automatic naming uses a hybrid trigger while the session has no existing name an
 A name is generated from a deliberately small conversation excerpt:
 
 1. Starting at the active session leaf, the extension follows parent entries on the active branch only. Abandoned branches are never included.
-2. It keeps only user and assistant text. Tool results, tool calls, thinking blocks, images, custom messages, system prompts, loaded instructions, file contents, and other session metadata are excluded.
+2. It sends only user text. Assistant text, tool results, tool calls, thinking blocks, images, custom messages, system prompts, and session metadata are excluded. Assistant messages only determine whether the agent has responded.
 3. Text is whitespace-normalized and bounded by `maxMessageChars` per message.
-4. The earliest `maxMessages` useful user/assistant messages are retained. This favors the original task and initial outcome instead of later incidental details.
-5. Traversal stops at the latest compaction checkpoint. Its bounded summary is included as earlier-session context, while the full pre-compaction history is not read or retained.
+4. The earliest `maxMessages` user messages are retained. This favors the original task rather than later incidental details.
+5. Traversal stops at the latest compaction checkpoint. Neither its summary nor earlier history is sent. Naming waits for a new user message if none follows that checkpoint.
 6. The final excerpt is bounded again by `maxConversationChars`. Settled and manual naming require at least one user and one assistant message; the active-run timeout requires only a user message.
 
 The excerpt is sent as a single user request to the configured Pi provider/model. The naming prompt asks the model to:
@@ -59,6 +59,16 @@ DEMO-123: Improve sample workflow
 
 No second model request is used for ticket handling or normalization. Identical automatic excerpts are fingerprinted locally and subject to `cooldownMs`, preventing duplicate requests after failures or repeated settled events. A changed excerpt or explicit `/auto-name` remains eligible immediately.
 
+## Privacy
+
+User text can contain pasted secrets, attached text files, or information inserted by another extension.
+The extension does not guarantee secret removal. Never use naming for sessions whose user text must stay private.
+Set `automatic` to `false` to disable automatic requests. Do not run `/auto-name` for sensitive sessions.
+Requests use the configured provider, which can differ from the session provider. Its retention policy still applies.
+`cacheRetention: "none"` does not guarantee that the provider retains no data.
+The naming prompt treats excerpts as untrusted data, but prompt instructions are not a security boundary.
+Provider errors are not displayed because their messages can contain sensitive request details.
+
 ## Configuration
 
 The extension follows Pi's extension-specific configuration convention: defaults in the package, a global file below Pi's `extensions` directory, and an optional trusted project override.
@@ -71,7 +81,8 @@ Create:
 ~/.pi/agent/extensions/auto-session-name.json
 ```
 
-This applies to every project.
+This applies to every project. If `PI_CODING_AGENT_DIR` is set, its `extensions/auto-session-name.json` replaces this path.
+`PI_AUTO_SESSION_NAME_CONFIG` can select a different global file.
 
 ### Project configuration
 
@@ -109,9 +120,9 @@ An absent file is normal. Invalid JSON or values keep the previous/default value
   "automatic": true,
   "activeNamingDelayMs": 60000,
   "cooldownMs": 300000,
-  "maxMessages": 6,
-  "maxMessageChars": 3000,
-  "maxConversationChars": 12000,
+  "maxMessages": 2,
+  "maxMessageChars": 500,
+  "maxConversationChars": 1000,
   "maxTitleChars": 80,
   "ticketPrefix": true
 }
@@ -135,9 +146,9 @@ See [`config.example.json`](config.example.json) for the complete default config
 | `automatic` | `true` | Automatically name unnamed sessions |
 | `activeNamingDelayMs` | `60000` | Name a still-running session after this delay; minimum 1000 ms |
 | `cooldownMs` | `300000` | Cooldown for an identical failed/empty automatic request |
-| `maxMessages` | `6` | Maximum user/assistant excerpts |
-| `maxMessageChars` | `3000` | Maximum normalized characters per excerpt |
-| `maxConversationChars` | `12000` | Maximum total naming context |
+| `maxMessages` | `2` | Maximum user excerpts |
+| `maxMessageChars` | `500` | Maximum normalized characters per excerpt |
+| `maxConversationChars` | `1000` | Maximum total naming context |
 | `maxTitleChars` | `80` | Maximum resulting title length |
 | `ticketPrefix` | `true` | Detect and normalize ticket IDs locally |
 
@@ -173,13 +184,13 @@ Boolean values accept `true`, `false`, `1`, and `0`.
 Update installed Pi packages:
 
 ```sh
-pi update --extensions
+pi update git:github.com/aran159/pi-auto-session-name
 ```
 
 Remove the extension:
 
 ```sh
-pi remove npm:pi-auto-session-name
+pi remove git:github.com/aran159/pi-auto-session-name
 ```
 
 ## Troubleshooting
@@ -201,7 +212,7 @@ pi -ne
 ## Development
 
 ```sh
-npm install
+npm ci --ignore-scripts
 npm run check
 ```
 

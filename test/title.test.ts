@@ -92,7 +92,7 @@ function conversationExcerpt(session: SessionEntryReader) {
   return buildConversationExcerpt(session, DEFAULT_CONFIG);
 }
 
-test("buildConversationExcerpt keeps user and assistant text only", () => {
+test("buildConversationExcerpt sends user text only", () => {
   const excerpt = conversationExcerpt(
     reader(
       linearEntries([
@@ -106,11 +106,10 @@ test("buildConversationExcerpt keeps user and assistant text only", () => {
   assert.equal(excerpt.hasUserMessage, true);
   assert.equal(excerpt.hasAssistantMessage, true);
   assert.match(excerpt.text, /User: Build an extension/);
-  assert.match(excerpt.text, /Assistant: I will implement it/);
-  assert.doesNotMatch(excerpt.text, /private reasoning|secret tool output/);
+  assert.doesNotMatch(excerpt.text, /I will implement it|private reasoning|secret tool output/);
 });
 
-test("buildConversationExcerpt keeps the earliest six useful messages", () => {
+test("buildConversationExcerpt keeps the earliest two user messages", () => {
   const excerpt = conversationExcerpt(
     reader(
       linearEntries([
@@ -127,8 +126,8 @@ test("buildConversationExcerpt keeps the earliest six useful messages", () => {
   );
 
   assert.match(excerpt.text, /^User: first request DEMO-123/);
-  assert.match(excerpt.text, /Assistant: third answer$/);
-  assert.doesNotMatch(excerpt.text, /late unrelated/);
+  assert.match(excerpt.text, /User: second request$/);
+  assert.doesNotMatch(excerpt.text, /third request|answer|late unrelated/);
 });
 
 test("buildConversationExcerpt bounds long text without joining full content", () => {
@@ -160,7 +159,7 @@ test("buildConversationExcerpt honors configured limits", () => {
   );
 
   assert.ok(excerpt.text.length <= 24);
-  assert.doesNotMatch(excerpt.text, /excluded/);
+  assert.doesNotMatch(excerpt.text, /six seven/);
 });
 
 test("buildConversationExcerpt follows only the active branch", () => {
@@ -174,11 +173,11 @@ test("buildConversationExcerpt follows only the active branch", () => {
   });
 
   assert.match(excerpt.text, /active task/);
-  assert.match(excerpt.text, /active answer/);
+  assert.equal(excerpt.hasAssistantMessage, true);
   assert.doesNotMatch(excerpt.text, /abandoned/);
 });
 
-test("buildConversationExcerpt uses a compaction checkpoint without walking older entries", () => {
+test("buildConversationExcerpt excludes compaction summaries and older entries", () => {
   const old = messageEntry("1", null, "user", "old full conversation");
   const compacted: SessionEntry = {
     type: "compaction",
@@ -200,9 +199,9 @@ test("buildConversationExcerpt uses a compaction checkpoint without walking olde
     },
   });
 
-  assert.match(excerpt.text, /Earlier session summary: Implement DEMO-321 checkout recovery/);
-  assert.match(excerpt.text, /Recovery tests now pass/);
-  assert.doesNotMatch(excerpt.text, /old full conversation/);
+  assert.equal(excerpt.text, "");
+  assert.equal(excerpt.hasUserMessage, false);
+  assert.equal(excerpt.hasAssistantMessage, true);
   assert.equal(reads, 1);
 });
 

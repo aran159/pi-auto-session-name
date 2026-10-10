@@ -154,10 +154,13 @@ export default function autoSessionName(pi: ExtensionAPI) {
   let activeRun: Promise<void> | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
+    activeNamingTimer.cancel();
+    gate.shutdown();
+    activeRun = undefined;
+    config = undefined;
     const loaded = await loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
     config = loaded.config;
     warned = false;
-    activeNamingTimer.cancel();
     for (const warning of loaded.warnings) console.warn(`[auto-session-name] ${warning}`);
   });
 
@@ -174,15 +177,14 @@ export default function autoSessionName(pi: ExtensionAPI) {
 
     try {
       const title = await generateTitle(ctx, currentConfig, excerpt, controller.signal);
-      if (!force && pi.getSessionName()) return;
+      if (controller.signal.aborted || (!force && pi.getSessionName())) return;
 
       pi.setSessionName(title);
       warned = false;
       if (ctx.hasUI) ctx.ui.notify(`Session named: ${title}`, "info");
-    } catch (error: unknown) {
+    } catch {
       if (!controller.signal.aborted && !warned && ctx.hasUI) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        ctx.ui.notify(`Automatic session naming failed: ${message}`, "warning");
+        ctx.ui.notify(`Session naming failed with ${modelLabel(currentConfig)}; check configuration and authentication`, "warning");
         warned = true;
       }
     } finally {

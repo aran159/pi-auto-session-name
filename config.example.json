@@ -10,9 +10,9 @@
   "automatic": true,
   "activeNamingDelayMs": 60000,
   "cooldownMs": 300000,
-  "maxMessages": 6,
-  "maxMessageChars": 3000,
-  "maxConversationChars": 12000,
+  "maxMessages": 2,
+  "maxMessageChars": 500,
+  "maxConversationChars": 1000,
   "maxTitleChars": 80,
   "ticketPrefix": true
 }

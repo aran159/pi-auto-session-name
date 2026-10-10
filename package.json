@@ -12,16 +12,18 @@
     "pi"
   ],
   "license": "MIT",
-  "publishConfig": {
-    "access": "public"
+  "private": true,
+  "overrides": {
+    "brace-expansion": "5.0.12",
+    "undici": "8.10.2"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patlux/pi-auto-session-name.git"
+    "url": "git+https://github.com/aran159/pi-auto-session-name.git"
   },
-  "homepage": "https://github.com/patlux/pi-auto-session-name#readme",
+  "homepage": "https://github.com/aran159/pi-auto-session-name#readme",
   "bugs": {
-    "url": "https://github.com/patlux/pi-auto-session-name/issues"
+    "url": "https://github.com/aran159/pi-auto-session-name/issues"
   },
   "files": [
     "src",
@@ -47,15 +49,15 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.82.1",
-    "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.3",
     "typescript": "^5.9.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --experimental-test-module-mocks --import tsx --test test/**/*.test.ts",
     "measure": "node --expose-gc --import tsx test/measure.mts",
     "check": "tsc --noEmit && npm test && npm run measure"
   }

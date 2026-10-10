@@ -53,9 +53,9 @@ export const DEFAULT_CONFIG: Readonly<AutoSessionNameConfig> = {
   automatic: true,
   activeNamingDelayMs: 60_000,
   cooldownMs: 5 * 60_000,
-  maxMessages: 6,
-  maxMessageChars: 3_000,
-  maxConversationChars: 12_000,
+  maxMessages: 2,
+  maxMessageChars: 500,
+  maxConversationChars: 1_000,
   maxTitleChars: 80,
   ticketPrefix: true,
 };
@@ -259,7 +259,7 @@ async function applyFile(
     const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
     if (!missing) {
       const message = error instanceof Error ? error.message : "unknown error";
-      warnings.push(`Could not read ${path}: ${message}`);
+      warnings.push(`Could not read ${path}: ${error instanceof SyntaxError ? "Invalid JSON" : message}`);
     }
   }
 }

@@ -165,7 +165,7 @@ test("package manifest uses host core packages and ships configuration docs", as
   assert.ok(manifest.files?.includes("config.example.json"));
   assert.ok(manifest.files?.includes("LICENSE"));
   assert.equal(manifest.repository?.type, "git");
-  assert.equal(manifest.repository?.url, "git+https://github.com/patlux/pi-auto-session-name.git");
-  assert.equal(manifest.homepage, "https://github.com/patlux/pi-auto-session-name#readme");
-  assert.equal(manifest.bugs?.url, "https://github.com/patlux/pi-auto-session-name/issues");
+  assert.equal(manifest.repository?.url, "git+https://github.com/aran159/pi-auto-session-name.git");
+  assert.equal(manifest.homepage, "https://github.com/aran159/pi-auto-session-name#readme");
+  assert.equal(manifest.bugs?.url, "https://github.com/aran159/pi-auto-session-name/issues");
 });
